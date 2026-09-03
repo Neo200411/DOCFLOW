@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Integer, DateTime, ForeignKey, Enum, LargeBinary
+from sqlalchemy import String, Integer, DateTime, ForeignKey, Enum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -165,7 +165,7 @@ class DocumentVersion(Base):
         UUID(as_uuid=True), ForeignKey("documents.document_id"), nullable=False
     )
     version_number: Mapped[int] = mapped_column(Integer, nullable=False)
-    file_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    file_path: Mapped[str] = mapped_column(String(1000), nullable=False)
     file_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     uploaded_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=False

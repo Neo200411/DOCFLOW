@@ -6,6 +6,7 @@ import ProjectWorkspace from '../pages/ProjectWorkspace';
 import UploadDocumentPage from '../pages/UploadDocumentPage';
 import DraftingInterface from '../components/studio/DraftingInterface';
 import ComponentShowcase from '../pages/ComponentShowcase';
+import LoginPage from '../pages/LoginPage';
 
 const AppRoutes = () => {
   return (
@@ -18,6 +19,7 @@ const AppRoutes = () => {
       </Route>
       {/* Dev routes outside layout */}
       <Route path="/dev/components" element={<ComponentShowcase />} />
+      <Route path="/login" element={<LoginPage />} />
     </Routes>
   );
 };

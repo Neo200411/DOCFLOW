@@ -12,6 +12,12 @@ dist
 dist-ssr
 *.local
 
+# Environment — NEVER commit secrets
+venv/
+.env
+/.env
+storage/*
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -28,3 +34,5 @@ backend/venv/
 backend/.env
 backend/__pycache__/
 backend/.pytest_cache/
+backend/storage/*
+!backend/storage/.gitkeep

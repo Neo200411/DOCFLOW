@@ -1,7 +1,6 @@
-import React from 'react';
-import { useParams, Link } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
-import { mockProjects } from '../data/mockProjects';
 import { useDocuments } from '../context/DocumentContext';
 import SourcePanel from '../components/sources/SourcePanel';
 import ChatPanel from '../components/chat/ChatPanel';
@@ -10,23 +9,41 @@ import Badge from '../components/ui/Badge';
 
 const ProjectWorkspace = () => {
   const { projectId } = useParams();
-  const { documents } = useDocuments();
+  const navigate = useNavigate();
+  const { documents, loadDocumentsForProject, loading } = useDocuments();
+  const [project, setProject] = useState(null);
   
-  // Find project in mock data (if it was created in this session, it won't be in mockProjects, 
-  // but we can fallback to a generated one for the prototype since state isn't persisted)
-  const project = mockProjects.find(p => p.id === projectId) || {
-    id: projectId,
-    name: 'New Project',
-    status: 'Active'
-  };
+  useEffect(() => {
+    // 1. Fetch this project's details
+    // Since we don't have a GET /projects/{id} endpoint yet, we could either 
+    // fetch all projects and find it, or just mock the header for now, 
+    // or rely on a new endpoint.
+    // The prompt only asked to fetch documents, but let's quickly fetch projects to find this one.
+    const loadProject = async () => {
+      try {
+        const res = await fetch('/api/projects', { credentials: 'include' });
+        if (res.status === 401) { navigate('/login'); return; }
+        if (res.ok) {
+          const allProj = await res.json();
+          const p = allProj.find(x => x.id === projectId);
+          setProject(p || { id: projectId, name: 'Project Details Loading...', status: 'Active' });
+        }
+      } catch (err) {}
+    };
+    loadProject();
+    
+    // 2. Fetch documents
+    if (projectId) {
+      loadDocumentsForProject(projectId);
+    }
+  }, [projectId, navigate]);
 
   const projectDocs = documents.filter(d => d.projectId === projectId);
 
   if (!project) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-        <h2 className="text-2xl font-bold text-gray-200 mb-2">Project not found</h2>
-        <Link to="/" className="text-primary hover:underline">Return to Projects</Link>
+        <h2 className="text-2xl font-bold text-gray-200 mb-2">Loading workspace...</h2>
       </div>
     );
   }

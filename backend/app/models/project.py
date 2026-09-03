@@ -1,6 +1,5 @@
 import uuid
 from datetime import datetime, timezone
-
 from sqlalchemy import String, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -19,6 +18,13 @@ class Project(Base):
         UUID(as_uuid=True), ForeignKey("tenants.tenant_id"), nullable=False
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(String(1000), nullable=True, default="")
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="Active")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), 
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc)
     )

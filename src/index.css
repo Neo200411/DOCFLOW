@@ -1,5 +1,18 @@
 @import "tailwindcss";
-@config "../tailwind.config.js";
+
+@theme {
+  --color-background: #0F1115;
+  --color-surface: #1E2028;
+  --color-surface-hover: #2A2C35;
+  --color-primary: #8B5CF6;
+  --color-primary-light: #A78BFA;
+  --color-primary-dark: #7C3AED;
+  --color-accent: #3B82F6;
+  --color-accent-light: #60A5FA;
+  --color-accent-dark: #2563EB;
+  --color-border: #2E323E;
+  --background-image-gemini-gradient: linear-gradient(to right, #8B5CF6, #3B82F6);
+}
 
 @layer base {
   body {

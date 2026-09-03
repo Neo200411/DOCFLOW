@@ -1,6 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { mockProjects } from '../data/mockProjects';
 import ProjectCard from '../components/projects/ProjectCard';
 import CreateProjectCard from '../components/projects/CreateProjectCard';
 import Input from '../components/ui/Input';
@@ -12,7 +11,9 @@ import Dropdown from '../components/ui/Dropdown';
 
 const ProjectsPage = () => {
   const navigate = useNavigate();
-  const [projects, setProjects] = useState(mockProjects);
+  const [projects, setProjects] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   
@@ -21,9 +22,30 @@ const ProjectsPage = () => {
   const [newProjectDesc, setNewProjectDesc] = useState('');
   const [newProjectStatus, setNewProjectStatus] = useState('Active');
 
+  useEffect(() => {
+    const fetchProjects = async () => {
+      try {
+        const res = await fetch('/api/projects', { credentials: 'include' });
+        if (res.status === 401) {
+          navigate('/login');
+          return;
+        }
+        if (!res.ok) throw new Error('Failed to fetch projects');
+        
+        const data = await res.json();
+        setProjects(data);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchProjects();
+  }, [navigate]);
+
   const filteredProjects = projects.filter(p => 
     p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    p.description.toLowerCase().includes(searchQuery.toLowerCase())
+    (p.description && p.description.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
   const handleCreateProject = () => {
@@ -47,6 +69,14 @@ const ProjectsPage = () => {
     
     navigate(`/projects/${newId}`);
   };
+
+  if (loading) {
+    return <div className="flex-1 p-8 flex justify-center items-center text-gray-400">Loading projects...</div>;
+  }
+
+  if (error) {
+    return <div className="flex-1 p-8 flex justify-center items-center text-red-500">Error: {error}</div>;
+  }
 
   return (
     <div className="flex-1 p-8 max-w-7xl mx-auto w-full">

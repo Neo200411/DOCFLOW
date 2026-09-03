@@ -1,6 +1,7 @@
 # Environment — NEVER commit secrets
 venv/
 .env
+storage/
 
 # Python
 __pycache__/

@@ -15,8 +15,10 @@ from app.models import (
 )
 from app.models.document import SensitivityLevel, DocumentStatus
 from app.schemas.document import UploadResponse
+from app.routers.auth import get_current_user
+from app.models.user import User
 
-router = APIRouter(prefix="/documents", tags=["documents"])
+router = APIRouter(prefix="/api/documents", tags=["documents"])
 
 
 def _validate_file(filename: str, mime_type: str, size_bytes: int) -> None:
@@ -86,12 +88,11 @@ def _resolve_uploading_as_team(
 def upload_document(
     project_id: uuid.UUID = Form(...),
     stage_id: uuid.UUID = Form(...),
-    uploaded_by: uuid.UUID = Form(...),  # TODO: replace with auth-derived current user once auth is wired up
-    tenant_id: uuid.UUID = Form(...),  # TODO: derive from user's tenant once auth is wired up
     uploading_as_team_id: uuid.UUID | None = Form(None),
     sensitivity_level: SensitivityLevel = Form(SensitivityLevel.internal),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Phase 1 upload flow:
@@ -111,14 +112,14 @@ def upload_document(
     _validate_file(file.filename, file.content_type, size_bytes)
 
     resolved_team_id = _resolve_uploading_as_team(
-        db, uploaded_by, project_id, uploading_as_team_id
+        db, current_user.user_id, project_id, uploading_as_team_id
     )
 
     document = Document(
-        tenant_id=tenant_id,
+        tenant_id=current_user.tenant_id,
         project_id=project_id,
         stage_id=stage_id,
-        uploaded_by=uploaded_by,
+        uploaded_by=current_user.user_id,
         uploaded_as_team_id=resolved_team_id,
         sensitivity_level=sensitivity_level,
         original_filename=file.filename,
@@ -127,12 +128,20 @@ def upload_document(
     db.add(document)
     db.flush()  # get document.document_id before creating the version
 
+    ext = os.path.splitext(file.filename)[1].lower()
+    rel_path = document.logical_path(ext)
+    abs_path = os.path.join(os.getcwd(), "storage", rel_path)
+    
+    os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+    with open(abs_path, "wb") as f:
+        f.write(file_bytes)
+
     version = DocumentVersion(
         document_id=document.document_id,
         version_number=1,
-        file_data=file_bytes,
+        file_path=rel_path,
         file_size_bytes=size_bytes,
-        uploaded_by=uploaded_by,
+        uploaded_by=current_user.user_id,
         status=DocumentStatus.pending_review,
     )
     db.add(version)
