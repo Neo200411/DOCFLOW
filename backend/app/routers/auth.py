@@ -26,7 +26,7 @@ class GoogleAuthRequest(BaseModel):
 def google_auth(data: GoogleAuthRequest, response: Response, db: Session = Depends(get_db)):
     try:
         idinfo = id_token.verify_oauth2_token(data.token, requests.Request(), GOOGLE_CLIENT_ID)
-        email = idinfo['email']
+        email = idinfo['email'].lower().strip()
         
         user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
         

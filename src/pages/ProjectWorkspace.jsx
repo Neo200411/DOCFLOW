@@ -12,8 +12,23 @@ const ProjectWorkspace = () => {
   const navigate = useNavigate();
   const { documents, loadDocumentsForProject, loading } = useDocuments();
   const [project, setProject] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [myAccess, setMyAccess] = useState(null);
   
   useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const res = await fetch('/api/auth/me', { credentials: 'include' });
+        if (res.ok) {
+          const user = await res.json();
+          setIsAdmin(user.is_org_admin === true);
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    checkAuth();
+    
     // 1. Fetch this project's details
     // Since we don't have a GET /projects/{id} endpoint yet, we could either 
     // fetch all projects and find it, or just mock the header for now, 
@@ -35,6 +50,16 @@ const ProjectWorkspace = () => {
     // 2. Fetch documents
     if (projectId) {
       loadDocumentsForProject(projectId);
+      
+      // Fetch access details
+      fetch(`/api/projects/${projectId}/my-access`, { credentials: 'include' })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+            if (data) {
+                setMyAccess(data);
+                setIsAdmin(data.is_admin);
+            }
+        });
     }
   }, [projectId, navigate]);
 
@@ -47,6 +72,54 @@ const ProjectWorkspace = () => {
       </div>
     );
   }
+
+  const handleRequestAccess = async (teamId) => {
+    try {
+      const res = await fetch('/api/access-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project_id: projectId, team_id: teamId })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setMyAccess(prev => {
+           if (!prev) return prev;
+           return {
+               ...prev,
+               teams: prev.teams.map(t => t.id === teamId ? { ...t, request_status: data.status } : t)
+           }
+        });
+      }
+    } catch (err) {}
+  };
+
+  const renderAccessUI = () => {
+      if (!myAccess) return null;
+      if (myAccess.is_admin || myAccess.max_role === 'team_lead') {
+          return <span className="text-sm text-green-400">You have full access</span>;
+      }
+      
+      const contributorTeams = myAccess.teams.filter(t => t.role === 'contributor');
+      if (contributorTeams.length === 0) return null; // Viewer only
+      
+      return (
+          <div className="flex gap-2 items-center">
+              {contributorTeams.map(t => {
+                  if (t.request_status === 'approved') return <span key={t.id} className="text-sm text-green-400">{t.name}: Confidential Access Approved</span>;
+                  if (t.request_status === 'pending') return <span key={t.id} className="text-sm text-yellow-400">{t.name}: Access Request Pending</span>;
+                  if (t.request_status === 'denied') return <span key={t.id} className="text-sm text-red-400">{t.name}: Access Request Denied</span>;
+                  return (
+                      <button 
+                        key={t.id}
+                        onClick={() => handleRequestAccess(t.id)} 
+                        className="text-sm bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded transition-colors">
+                          Request Confidential Access ({t.name})
+                      </button>
+                  );
+              })}
+          </div>
+      );
+  };
 
   return (
     <div className="flex-1 flex flex-col h-[calc(100vh-3.5rem)] overflow-hidden">
@@ -61,6 +134,14 @@ const ProjectWorkspace = () => {
         <Badge variant={project.status === 'Active' ? 'active' : 'neutral'}>
           {project.status}
         </Badge>
+        <div className="ml-4">
+            {renderAccessUI()}
+        </div>
+        {isAdmin && (
+          <Link to={`/projects/${projectId}/admin`} className="ml-auto text-sm text-blue-400 hover:text-blue-300">
+            Admin Settings
+          </Link>
+        )}
       </div>
 
       {/* 3-Column Layout */}

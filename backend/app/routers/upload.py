@@ -12,6 +12,7 @@ from app.models import (
     DocumentVersion,
     DocumentTeamVisibility,
     UserTeamMembership,
+    Team,
 )
 from app.models.document import SensitivityLevel, DocumentStatus
 from app.schemas.document import UploadResponse
@@ -41,7 +42,7 @@ def _validate_file(filename: str, mime_type: str, size_bytes: int) -> None:
 
 
 def _resolve_uploading_as_team(
-    db: Session, user_id: uuid.UUID, project_id: uuid.UUID, requested_team_id: uuid.UUID | None
+    db: Session, current_user: User, project_id: uuid.UUID, requested_team_id: uuid.UUID | None
 ) -> uuid.UUID:
     """
     Phase 1 §1: resolves which team the uploader is "acting as".
@@ -49,18 +50,37 @@ def _resolve_uploading_as_team(
     - If they belong to multiple teams, requested_team_id must be provided explicitly.
     - If they belong to none, this is a permissions error (should not be able to upload).
     """
+    from app.services.access_control import role_permits, get_user_project_admin_status
+    is_project_admin = get_user_project_admin_status(db, current_user.user_id, project_id)
+
+    if current_user.is_org_admin or is_project_admin:
+        teams = db.execute(select(Team).where(Team.project_id == project_id)).scalars().all()
+        team_ids = {t.team_id for t in teams}
+        
+        if not team_ids:
+            raise HTTPException(status_code=403, detail="Project has no teams to upload to.")
+            
+        if requested_team_id is not None:
+            if requested_team_id not in team_ids:
+                raise HTTPException(status_code=403, detail="Requested team does not exist in this project.")
+            return requested_team_id
+            
+        if len(team_ids) == 1:
+            return next(iter(team_ids))
+            
+        admin_type = "Org admin" if current_user.is_org_admin else "Project admin"
+        raise HTTPException(
+            status_code=400,
+            detail=f"{admin_type} can upload to multiple teams on this project — 'uploading_as_team_id' must be specified explicitly."
+        )
+
+    from app.models.team import TeamRole
     memberships = db.execute(
         select(UserTeamMembership).where(
-            UserTeamMembership.user_id == user_id,
-            UserTeamMembership.project_id == project_id,
+            UserTeamMembership.user_id == current_user.user_id,
+            UserTeamMembership.project_id == project_id
         )
     ).scalars().all()
-
-    if not memberships:
-        raise HTTPException(
-            status_code=403,
-            detail="User has no team membership on this project — cannot upload.",
-        )
 
     team_ids = {m.team_id for m in memberships}
 
@@ -70,18 +90,32 @@ def _resolve_uploading_as_team(
                 status_code=403,
                 detail="User is not a member of the specified 'uploading as' team on this project.",
             )
-        return requested_team_id
+        target_team_id = requested_team_id
+    elif len(team_ids) == 1:
+        target_team_id = next(iter(team_ids))
+    elif not team_ids:
+        raise HTTPException(
+            status_code=403,
+            detail="User is not a member of any team on this project.",
+        )
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "User belongs to multiple teams on this project — "
+                "'uploading_as_team_id' must be specified explicitly."
+            ),
+        )
 
-    if len(team_ids) == 1:
-        return next(iter(team_ids))
+    membership = next(m for m in memberships if m.team_id == target_team_id)
+    
+    if not role_permits(is_project_admin, membership.role, "write"):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Your role on this team ({membership.role.name}) does not permit uploading."
+        )
 
-    raise HTTPException(
-        status_code=400,
-        detail=(
-            "User belongs to multiple teams on this project — "
-            "'uploading_as_team_id' must be specified explicitly."
-        ),
-    )
+    return target_team_id
 
 
 @router.post("/upload", response_model=UploadResponse)
@@ -112,7 +146,7 @@ def upload_document(
     _validate_file(file.filename, file.content_type, size_bytes)
 
     resolved_team_id = _resolve_uploading_as_team(
-        db, current_user.user_id, project_id, uploading_as_team_id
+        db, current_user, project_id, uploading_as_team_id
     )
 
     document = Document(

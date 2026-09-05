@@ -16,6 +16,7 @@ const ProjectsPage = () => {
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   
   // New Project Form State
   const [newProjectName, setNewProjectName] = useState('');
@@ -23,6 +24,18 @@ const ProjectsPage = () => {
   const [newProjectStatus, setNewProjectStatus] = useState('Active');
 
   useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const res = await fetch('/api/auth/me', { credentials: 'include' });
+        if (res.ok) {
+          const user = await res.json();
+          setIsAdmin(user.is_org_admin === true);
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    
     const fetchProjects = async () => {
       try {
         const res = await fetch('/api/projects', { credentials: 'include' });
@@ -40,6 +53,7 @@ const ProjectsPage = () => {
         setLoading(false);
       }
     };
+    checkAuth();
     fetchProjects();
   }, [navigate]);
 
@@ -48,26 +62,43 @@ const ProjectsPage = () => {
     (p.description && p.description.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
-  const handleCreateProject = () => {
+  const handleCreateProject = async () => {
     if (!newProjectName.trim()) return;
     
-    const newId = `p-${Date.now()}`;
-    const newProject = {
-      id: newId,
-      name: newProjectName,
-      description: newProjectDesc,
-      status: newProjectStatus,
-      updatedAt: 'Updated just now'
-    };
-    
-    setProjects([newProject, ...projects]);
-    setIsModalOpen(false);
-    
-    // Reset form
-    setNewProjectName('');
-    setNewProjectDesc('');
-    
-    navigate(`/projects/${newId}`);
+    try {
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          name: newProjectName,
+          description: newProjectDesc,
+          status: newProjectStatus
+        })
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        setIsModalOpen(false);
+        setNewProjectName('');
+        setNewProjectDesc('');
+        
+        // Refetch projects
+        const fetchRes = await fetch('/api/projects', { credentials: 'include' });
+        if (fetchRes.ok) {
+          const fetchedData = await fetchRes.json();
+          setProjects(fetchedData);
+        }
+        
+        navigate(`/projects/${data.id}`);
+      } else {
+        const errorData = await res.json();
+        setError(errorData.detail || 'Failed to create project');
+      }
+    } catch (err) {
+      console.error(err);
+      setError('Network error');
+    }
   };
 
   if (loading) {
@@ -96,7 +127,7 @@ const ProjectsPage = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        <CreateProjectCard onClick={() => setIsModalOpen(true)} />
+        {isAdmin && <CreateProjectCard onClick={() => setIsModalOpen(true)} />}
         {filteredProjects.map(project => (
           <ProjectCard key={project.id} project={project} />
         ))}

@@ -74,9 +74,38 @@ def sensitivity_to_int(level: SensitivityLevel) -> int:
         SensitivityLevel.public: 0,
         SensitivityLevel.internal: 1,
         SensitivityLevel.confidential: 2,
-        SensitivityLevel.restricted: 3,
     }
     return order.get(level, 0)
+
+def get_effective_clearance(
+    db: Session, 
+    user_id: uuid.UUID, 
+    project_id: uuid.UUID, 
+    role: TeamRole | None, 
+    is_project_admin: bool,
+    team_ids: set[uuid.UUID]
+) -> SensitivityLevel:
+    if is_project_admin or role == TeamRole.team_lead:
+        return SensitivityLevel.confidential
+        
+    if role in (TeamRole.contributor, TeamRole.viewer):
+        if role == TeamRole.contributor and team_ids:
+            from app.models.access_request import AccessRequest, AccessRequestStatus
+            has_approved = db.execute(
+                select(exists().where(
+                    and_(
+                        AccessRequest.user_id == user_id,
+                        AccessRequest.project_id == project_id,
+                        AccessRequest.team_id.in_(team_ids),
+                        AccessRequest.status == AccessRequestStatus.approved
+                    )
+                ))
+            ).scalar()
+            if has_approved:
+                return SensitivityLevel.confidential
+        return SensitivityLevel.internal
+        
+    return SensitivityLevel.public
 
 
 def can_access(db: Session, user: User, project_id: uuid.UUID, document: Document, action: str) -> bool:
@@ -92,17 +121,22 @@ def can_access(db: Session, user: User, project_id: uuid.UUID, document: Documen
     if not is_project_admin and max_team_role is None:
         return False
 
+    intersecting_teams = set()
     if not is_project_admin:
         visible_teams = get_document_visible_teams(db, document.document_id)
         if visible_teams:
             user_teams = get_user_teams(db, user.user_id, project_id)
-            if not (user_teams & visible_teams):
+            intersecting_teams = user_teams & visible_teams
+            if not intersecting_teams:
                 return False
 
-    user_clearance = sensitivity_to_int(user.clearance)
+    effective_clearance = get_effective_clearance(
+        db, user.user_id, project_id, max_team_role, is_project_admin, intersecting_teams
+    )
+    user_clearance_int = sensitivity_to_int(effective_clearance)
     doc_sensitivity = sensitivity_to_int(document.sensitivity_level)
     
-    if user_clearance < doc_sensitivity:
+    if user_clearance_int < doc_sensitivity:
         return False
 
     if not role_permits(is_project_admin, max_team_role, action):
@@ -138,7 +172,12 @@ def document_access_filter(db: Session, user: User, project_id: uuid.UUID, actio
         )
         visibility_cond = or_(has_no_visibility_restrictions, matches_user_team)
 
-    user_clearance_int = sensitivity_to_int(user.clearance)
+    user_team_ids_set = set(user_team_ids) if not is_project_admin else set()
+    effective_clearance = get_effective_clearance(
+        db, user.user_id, project_id, max_team_role, is_project_admin, user_team_ids_set
+    )
+    user_clearance_int = sensitivity_to_int(effective_clearance)
+    
     allowed_sensitivities = [
         level for level in SensitivityLevel 
         if sensitivity_to_int(level) <= user_clearance_int

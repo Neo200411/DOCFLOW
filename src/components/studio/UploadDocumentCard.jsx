@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Upload } from 'lucide-react';
 import Card from '../ui/Card';
@@ -6,6 +6,24 @@ import Card from '../ui/Card';
 const UploadDocumentCard = () => {
   const navigate = useNavigate();
   const { projectId } = useParams();
+  const [canUpload, setCanUpload] = useState(false);
+
+  useEffect(() => {
+    const fetchTeams = async () => {
+      try {
+        const res = await fetch(`/api/projects/${projectId}/upload-teams`, { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          setCanUpload(data.length > 0);
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    fetchTeams();
+  }, [projectId]);
+
+  if (!canUpload) return null;
 
   return (
     <Card 

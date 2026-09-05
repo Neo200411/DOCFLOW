@@ -17,8 +17,6 @@ class SensitivityLevel(str, enum.Enum):
     public = "public"
     internal = "internal"
     confidential = "confidential"
-    restricted = "restricted"
-
 
 class DocumentStatus(str, enum.Enum):
     """

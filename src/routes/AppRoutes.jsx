@@ -3,6 +3,7 @@ import { Routes, Route } from 'react-router-dom';
 import AppLayout from '../components/layout/AppLayout';
 import ProjectsPage from '../pages/ProjectsPage';
 import ProjectWorkspace from '../pages/ProjectWorkspace';
+import AdminProjectPage from '../pages/AdminProjectPage';
 import UploadDocumentPage from '../pages/UploadDocumentPage';
 import DraftingInterface from '../components/studio/DraftingInterface';
 import ComponentShowcase from '../pages/ComponentShowcase';
@@ -14,6 +15,7 @@ const AppRoutes = () => {
       <Route element={<AppLayout />}>
         <Route path="/" element={<ProjectsPage />} />
         <Route path="/projects/:projectId" element={<ProjectWorkspace />} />
+        <Route path="/projects/:projectId/admin" element={<AdminProjectPage />} />
         <Route path="/projects/:projectId/upload" element={<UploadDocumentPage />} />
         <Route path="/projects/:projectId/studio/:templateId" element={<DraftingInterface />} />
       </Route>

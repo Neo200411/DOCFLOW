@@ -12,7 +12,7 @@ from app.models.user import User
 from app.models.project import Project
 from app.models.document import Document, DocumentVersion
 from app.models.stage import Stage
-from app.models.team import ProjectAdmin, UserTeamMembership
+from app.models.team import ProjectAdmin, UserTeamMembership, Team, TeamRole
 from app.routers.auth import get_current_user
 from app.services.access_control import document_access_filter
 
@@ -127,3 +127,71 @@ def list_project_documents(project_id: uuid.UUID, db: Session = Depends(get_db),
             "stage": stage.name
         })
     return result
+
+@router.get("/{project_id}/upload-teams")
+def list_upload_teams(project_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if current_user.is_org_admin:
+        teams = db.execute(select(Team).where(Team.project_id == project_id)).scalars().all()
+        return [{"id": str(t.team_id), "name": t.name} for t in teams]
+    
+    # Non org-admin: check memberships where role is contributor or team_lead
+    memberships = db.execute(
+        select(UserTeamMembership, Team)
+        .join(Team, UserTeamMembership.team_id == Team.team_id)
+        .where(
+            UserTeamMembership.user_id == current_user.user_id,
+            UserTeamMembership.project_id == project_id,
+            UserTeamMembership.role.in_([TeamRole.contributor, TeamRole.team_lead])
+        )
+    ).all()
+    
+    return [{"id": str(team.team_id), "name": team.name} for membership, team in memberships]
+
+@router.get("/{project_id}/stages")
+def list_project_stages(project_id: uuid.UUID, db: Session = Depends(get_db)):
+    stages = db.execute(select(Stage).where(Stage.project_id == project_id).order_by(Stage.order_index)).scalars().all()
+    return [{"id": str(s.stage_id), "name": s.name} for s in stages]
+
+
+@router.get("/{project_id}/my-access")
+def get_my_access(project_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from app.services.access_control import get_user_project_admin_status, get_user_max_team_role
+    from app.models.access_request import AccessRequest
+    
+    is_admin = get_user_project_admin_status(db, current_user.user_id, project_id) or current_user.is_org_admin
+    max_role = get_user_max_team_role(db, current_user.user_id, project_id)
+    
+    memberships = db.execute(
+        select(UserTeamMembership, Team)
+        .join(Team, UserTeamMembership.team_id == Team.team_id)
+        .where(
+            UserTeamMembership.user_id == current_user.user_id,
+            UserTeamMembership.project_id == project_id
+        )
+    ).all()
+    
+    requests = db.execute(
+        select(AccessRequest).where(
+            AccessRequest.user_id == current_user.user_id,
+            AccessRequest.project_id == project_id
+        )
+    ).scalars().all()
+    
+    req_by_team = {str(r.team_id): r.status for r in requests}
+    
+    teams = []
+    for mem, team in memberships:
+        teams.append({
+            "id": str(team.team_id),
+            "name": team.name,
+            "role": mem.role,
+            "request_status": req_by_team.get(str(team.team_id))
+        })
+        
+    return {
+        "is_admin": is_admin,
+        "max_role": max_role,
+        "teams": teams
+    }
+
+

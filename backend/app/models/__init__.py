@@ -10,6 +10,7 @@ from app.models.document import (
     DocumentTeamVisibility,
     DocumentStageReference,
 )
+from app.models.access_request import AccessRequest
 
 __all__ = [
     "Tenant",
@@ -24,4 +25,5 @@ __all__ = [
     "DocumentVersion",
     "DocumentTeamVisibility",
     "DocumentStageReference",
+    "AccessRequest",
 ]
