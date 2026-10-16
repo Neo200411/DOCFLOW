@@ -1,4 +1,3 @@
-import asyncio
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -30,19 +29,11 @@ app = FastAPI(title="DocFlow AI", version="0.1.0")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-
-@app.on_event("startup")
-async def _warm_up_docling():
-    # Docling's model weights load lazily on its first real PDF/DOCX
-    # conversion (~20-30s), not when the converter object is constructed.
-    # Paying that cost here, once, at boot means the first real upload after
-    # the server starts doesn't stall waiting on it — important for a live
-    # demo, where that first upload is often the one someone's watching.
-    # Runs in the background so it doesn't delay port binding: a slow
-    # synchronous startup event blocks uvicorn from opening the port at
-    # all, which trips Render's port-scan timeout on a cold instance.
-    from app.services.document_parser import warm_up
-    asyncio.create_task(asyncio.to_thread(warm_up))
+# No eager Docling warm-up: loading its OCR/layout model weights is a large
+# one-time memory spike, which risks OOM-killing the process shortly after
+# boot on a memory-constrained instance. Docling loads them lazily on the
+# first real PDF/DOCX conversion instead — slower first upload, but doesn't
+# put the whole process at risk on deploy.
 
 
 _raw_origins = os.environ.get("ALLOWED_ORIGINS", f"{FRONTEND_URL},http://localhost:5173,http://127.0.0.1:5173")
