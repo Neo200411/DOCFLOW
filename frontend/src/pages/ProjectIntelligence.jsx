@@ -62,6 +62,12 @@ const ProjectIntelligence = () => {
   const [teamsOpen, setTeamsOpen] = useState(false);
   const [teams, setTeams] = useState([]);
   const [teamsLoading, setTeamsLoading] = useState(false);
+  // "View members" expansion, lazy-loaded per team and cached by team_id so
+  // re-expanding doesn't re-fetch (mirrors ProjectWorkspace.jsx's own Teams modal).
+  const [expandedTeamId, setExpandedTeamId] = useState(null);
+  const [teamMembersById, setTeamMembersById] = useState({});
+  const [teamMembersLoadingId, setTeamMembersLoadingId] = useState(null);
+  const [teamMembersErrorId, setTeamMembersErrorId] = useState({});
 
   // Stage editing modal state in Intelligence
   const [editingStage, setEditingStage] = useState(null);
@@ -206,12 +212,34 @@ const ProjectIntelligence = () => {
   const openTeams = async () => {
     setTeamsOpen(true);
     setTeamsLoading(true);
+    setExpandedTeamId(null);
+    setTeamMembersById({});
+    setTeamMembersErrorId({});
     try {
       setTeams(await teamsApi.list(projectId));
     } catch {
       setTeams([]);
     } finally {
       setTeamsLoading(false);
+    }
+  };
+
+  const toggleTeamMembers = async (teamId) => {
+    if (expandedTeamId === teamId) {
+      setExpandedTeamId(null);
+      return;
+    }
+    setExpandedTeamId(teamId);
+    if (teamMembersById[teamId]) return; // already cached
+    setTeamMembersLoadingId(teamId);
+    setTeamMembersErrorId((prev) => ({ ...prev, [teamId]: '' }));
+    try {
+      const members = await teamsApi.members(projectId, teamId);
+      setTeamMembersById((prev) => ({ ...prev, [teamId]: members }));
+    } catch (err) {
+      setTeamMembersErrorId((prev) => ({ ...prev, [teamId]: err.message || 'Could not load members.' }));
+    } finally {
+      setTeamMembersLoadingId(null);
     }
   };
 
@@ -1122,17 +1150,45 @@ const ProjectIntelligence = () => {
           ) : teams.length === 0 ? (
             <p className="text-sm text-gray-500">No teams found for this project.</p>
           ) : (
-            teams.map((t) => (
-              <div
-                key={t.team_id}
-                className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2.5"
-              >
-                <span className="text-sm font-medium text-gray-200">{t.name}</span>
-                <span className="text-xs text-gray-500">
-                  {t.member_count} member{t.member_count === 1 ? '' : 's'}
-                </span>
-              </div>
-            ))
+            teams.map((t) => {
+              const isExpanded = expandedTeamId === t.team_id;
+              const members = teamMembersById[t.team_id];
+              const memberError = teamMembersErrorId[t.team_id];
+              return (
+                <div key={t.team_id} className="rounded-lg border border-border bg-background">
+                  <button
+                    type="button"
+                    onClick={() => toggleTeamMembers(t.team_id)}
+                    className="flex w-full items-center justify-between px-3 py-2.5 text-left"
+                    aria-expanded={isExpanded}
+                  >
+                    <span className="text-sm font-medium text-gray-200">{t.name}</span>
+                    <span className="flex items-center gap-2 text-xs text-gray-500">
+                      {t.member_count} member{t.member_count === 1 ? '' : 's'}
+                      <span aria-hidden="true">{isExpanded ? '▲' : '▼'}</span>
+                    </span>
+                  </button>
+                  {isExpanded && (
+                    <div className="border-t border-border/60 px-3 py-2 space-y-1">
+                      {teamMembersLoadingId === t.team_id ? (
+                        <p className="text-xs text-gray-500">Loading members…</p>
+                      ) : memberError ? (
+                        <p className="text-xs text-red-400">{memberError}</p>
+                      ) : members && members.length === 0 ? (
+                        <p className="text-xs text-gray-500">No members assigned to this team yet.</p>
+                      ) : (
+                        (members || []).map((m) => (
+                          <div key={m.user_id} className="flex items-center justify-between text-xs">
+                            <span className="text-gray-300">{m.name}</span>
+                            <span className="text-gray-500 capitalize">{m.role.replace('_', ' ')}</span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
       </Modal>
